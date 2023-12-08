@@ -1,0 +1,38 @@
+image: python:3.9.16
+
+
+maintenance-pipeline-trigger:
+  script:
+    - pip install --upgrade pip
+    - pip install kfp
+    - python .gitlab-ci-kubeflow-api.py maintenance $CI_COMMIT_TIMESTAMP
+  rules:
+    - if: $CI_COMMIT_TAG
+      when: never 
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes:
+      - .gitlab-ci.yml # ci/cd pipeline changed
+
+data-pipeline-trigger:
+  script:
+    - pip install --upgrade pip
+    - pip install kfp
+    - python .gitlab-ci-kubeflow-api.py data $CI_COMMIT_TIMESTAMP
+  rules:
+    - if: $CI_COMMIT_TAG
+      when: never 
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes:
+      - data.csv.dvc  # 'New data' feedback loop
+
+feature-pipeline-trigger:  
+  script:
+    - pip install --upgrade pip
+    - pip install kfp
+    - python .gitlab-ci-kubeflow-api.py feature $CI_COMMIT_TIMESTAMP
+  rules:
+    - if: $CI_COMMIT_TAG
+      when: never 
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes:
+      - pipeline.yaml # 'New feature' feedback loop

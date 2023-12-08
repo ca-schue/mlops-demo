@@ -1,0 +1,66 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sa-aws-kserve
+  namespace: kserve-deploy-test
+secrets:
+- name: pipeline-secrets
+
+---
+
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  namespace: kubeflow
+  name: allow-all-kubeflow
+rules:
+- apiGroups: ["*"]
+  resources: ["*"]
+  verbs: ["*"]
+ 
+---
+
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  namespace: kserve-deploy-test
+  name: allow-all-kserve
+rules:
+- apiGroups: ["*"]
+  resources: ["*"]
+  verbs: ["*"]
+ 
+---
+
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: pipeline-runner-kserve-binding
+  namespace: kserve-deploy-test
+subjects:
+- kind: ServiceAccount
+  name: pipeline-runner
+  namespace: kubeflow
+  apiGroup: ""
+roleRef:
+  kind: Role
+  name: allow-all-kserve
+  apiGroup: ""
+  
+---
+
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: pipeline-runner-allow-all
+  namespace: kubeflow
+subjects:
+- kind: ServiceAccount
+  name: pipeline-runner
+  namespace: kubeflow
+  apiGroup: ""
+roleRef:
+  kind: Role
+  name: allow-all-kubeflow
+  apiGroup: ""
+  

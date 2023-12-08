@@ -1,0 +1,44 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: kubeflow-ingress
+  namespace: kubeflow
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$1
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+spec:
+  ingressClassName: nginx
+  rules:
+  - http:
+      paths:
+      - path: /?(.*)
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: ml-pipeline-ui
+            port:
+              number: 80
+          
+
+---
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: kserve-ingress
+  namespace: istio-system
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+spec:
+  ingressClassName: nginx
+  rules:
+  - http:
+      paths:
+      - path: /kserve/?(.*)
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: istio-ingressgateway
+            port:
+              number: 80
+
