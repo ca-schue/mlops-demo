@@ -20,6 +20,9 @@ as a process to be implemented by the users. It is used for both
 both the experimental and production pipelines are always based on a current data set.
 data set in both the experimental and production pipelines.
 
+<details xmlns="http://www.w3.org/1999/html">
+  
+<summary><b>Sources</b></summary>
 
 [1] Gartner: Gartner survey reveals less than half of data and analytics teams effectively provide value to the organization. (2023)<br>
 [2] Mäkinen et al.: Who needs mlops: What data scientists seek to accomplish and how can mlops help? (2021)<br>
@@ -27,7 +30,7 @@ data set in both the experimental and production pipelines.
 [4] Staff, V.: Why do 87% of data science projects never make it into production?
 (2019)<br>
 [5] Subramanya, R., Sierla, S., Vyatkin, V.: From devops to mlops: Overview and application to electricity market forecasting (2022)
-
+</details>
 
 ## About this Project
 
@@ -44,7 +47,7 @@ The project showcases the implementation of MLOps by utilizing Kubeflow as a pip
 ### Prerequisites
 - Remote Git Repository with CI/CD Pipeline functionality - Tested with GitLab.
 - Remote Data Store compatible with Data Version Control (DVC) - Tested with Amazon S3.
-- Kubernetes Cluster with Kubeflow and KServe operational.
+- Kubernetes Cluster with Kubeflow and KServe operational. ServiceAccount, RoleBindings and an Ingress in given in the [`kubernetes/`](kubernetes/) folder. Please refer to the official documentations.
 
 ### 1. Experiment locally: [`experimental-pipeline.ipynb`](pipelines/experimental-pipeline.ipynb)
 - Start by working on your model locally, as you would in a typical ML pipeline: Input your datase, output a trained model.
