@@ -1,0 +1,9 @@
+outs:
+- md5: a71dc1a634d52f0882095bd8ce0acb0c
+  size: 18042
+  hash: md5
+  path: data.csv
+  cloud:
+    s3:
+      etag: a71dc1a634d52f0882095bd8ce0acb0c
+      version_id: kqmfokRhTx9aRu.hBtafM1ueVJFqy_6k

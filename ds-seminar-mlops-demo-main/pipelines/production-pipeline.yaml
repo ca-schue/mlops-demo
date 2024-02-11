@@ -1,0 +1,559 @@
+# PIPELINE DEFINITION
+# Name: pipeline
+# Inputs:
+#    timestamp: str [Default: '']
+#    trigger: str [Default: '']
+components:
+  comp-condition-1:
+    dag:
+      tasks:
+        deploy:
+          cachingOptions: {}
+          componentRef:
+            name: comp-deploy
+          taskInfo:
+            name: deploy
+    inputDefinitions:
+      parameters:
+        pipelinechannel--git-dvc-push-Output:
+          parameterType: STRING
+  comp-data-preprocessing:
+    executorLabel: exec-data-preprocessing
+    inputDefinitions:
+      artifacts:
+        dataset:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+    outputDefinitions:
+      artifacts:
+        processed_dataset:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+  comp-deploy:
+    executorLabel: exec-deploy
+  comp-git-dvc-clone:
+    executorLabel: exec-git-dvc-clone
+    outputDefinitions:
+      artifacts:
+        dataset:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+        repo:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+  comp-git-dvc-push:
+    executorLabel: exec-git-dvc-push
+    inputDefinitions:
+      artifacts:
+        metrics:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+        repo:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+        trained_model:
+          artifactType:
+            schemaTitle: system.Model
+            schemaVersion: 0.0.1
+      parameters:
+        timestamp:
+          parameterType: STRING
+        trigger:
+          parameterType: STRING
+    outputDefinitions:
+      parameters:
+        Output:
+          parameterType: STRING
+  comp-metrics:
+    executorLabel: exec-metrics
+    inputDefinitions:
+      artifacts:
+        processed_dataset:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+        trained_model:
+          artifactType:
+            schemaTitle: system.Model
+            schemaVersion: 0.0.1
+    outputDefinitions:
+      artifacts:
+        metrics:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+  comp-train:
+    executorLabel: exec-train
+    inputDefinitions:
+      artifacts:
+        processed_dataset:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+    outputDefinitions:
+      artifacts:
+        trained_model:
+          artifactType:
+            schemaTitle: system.Model
+            schemaVersion: 0.0.1
+deploymentSpec:
+  executors:
+    exec-data-preprocessing:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - data_preprocessing
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.4.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'pandas' 'scikit-learn'\
+          \ && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef data_preprocessing(\n    dataset: Input[Dataset],\n    processed_dataset:\
+          \ Output[Dataset]\n):\n    import pandas as pd\n    from sklearn.preprocessing\
+          \ import StandardScaler\n\n    ## Data Storage\n    # Einlesen Datensatz\
+          \ \"auto_mpg\" aus aktuellem Ordner \n    df = pd.read_csv(dataset.path)\n\
+          \n\n    ## Data Cleaning\n    # Entfernung der nominaler Merkmale f\xFC\
+          r die Regression \n    df = df.drop(columns=['name'])\n\n    # Umwandlung\
+          \ in numerische Datentypen, l\xF6schen inkompatibler Daten\n    df = df.apply(pd.to_numeric,\
+          \ errors='coerce').dropna()\n\n    # Entfernen von Ausrei\xDFerdaten au\xDF\
+          erhalb von Mittelwert +/- 3 Standardabweichung\n    for col in df.columns:\n\
+          \        df = df.drop(df[(df[col] < (df[col].mean() - 2.5*df[col].std()))\
+          \ \n                    | (df[col] > (df[col].mean() + 2.5*df[col].std()))].index)\n\
+          \n    # Standardisierung der Variablen in das Vielfache ihrer Standardabweichung\
+          \ \n    #df = pd.DataFrame(StandardScaler().fit_transform(df), index=df.index,\
+          \ columns=df.columns)\n\n    df.reset_index(drop=True).to_pickle(processed_dataset.path)\n\
+          \n"
+        image: python:3.9.16
+    exec-deploy:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - deploy
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.4.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'kubernetes'\
+          \ 'kserve==0.11.1' && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef deploy(\n    # trained_model: Input[Model],\n):    \n    from\
+          \ kserve import KServeClient\n    from kserve import constants\n    from\
+          \ kserve import utils\n    from kserve import V1beta1InferenceService\n\
+          \    from kserve import V1beta1InferenceServiceSpec\n    from kserve import\
+          \ V1beta1PredictorSpec\n    from kserve import V1beta1SKLearnSpec\n    from\
+          \ kubernetes import client\n    from kubernetes.client.rest import ApiException\
+          \ \n    from kubernetes.client.models import V1EnvVar\n    from kubernetes.client\
+          \ import V1ResourceRequirements\n    from time import sleep\n\n    import\
+          \ shutil\n    import pathlib\n    import os\n\n    namespace = \"kserve-deploy-test\"\
+          \ # utils.get_default_target_namespace()  \n    name='sklearn-mpg'\n   \
+          \ kserve_version='v1beta1'\n    api_version = constants.KSERVE_GROUP + '/'\
+          \ + kserve_version\n\n    KServe = KServeClient()\n\n    try:\n        KServe.get(name,\
+          \ namespace=namespace, watch=True, timeout_seconds=10)\n        KServe.delete(name,\
+          \ namespace)\n    except RuntimeError:\n        pass # model does not exist\
+          \ yet\n\n    found = False\n    for _ in range(10):\n        try:\n    \
+          \        KServe.get(name, namespace=namespace, timeout_seconds=20)\n   \
+          \         sleep(10)\n        except RuntimeError:\n            found = True\n\
+          \            break # model does not exist yet ... \n\n    if found == False:\n\
+          \        raise Exception(\"Could not delete model\")\n\n    # TODO: remove??\n\
+          \    aws_env_vars = [V1EnvVar(name=\"AWS_ACCESS_KEY_ID\", value=os.environ['AWS_ACCESS_KEY_ID']),\n\
+          \                    V1EnvVar(name=\"AWS_SECRET_ACCESS_KEY\", value=os.environ['AWS_SECRET_ACCESS_KEY'])]\n\
+          \n    isvc = V1beta1InferenceService(api_version=api_version,\n        \
+          \                        kind=constants.KSERVE_KIND,\n                 \
+          \               metadata=client.V1ObjectMeta(\n                        \
+          \            name=name, \n                                    namespace=namespace,\
+          \ \n                                    annotations={\n                \
+          \                        'sidecar.istio.io/inject':'false',\n          \
+          \                              'serving.kserve.io/enable-prometheus-scraping':\
+          \ \"true\"\n                                        }),\n              \
+          \                  spec=V1beta1InferenceServiceSpec(\n                 \
+          \               predictor=V1beta1PredictorSpec(\n                      \
+          \              service_account_name=\"sa-aws-kserve\",\n               \
+          \                     sklearn=(\n                                      \
+          \  V1beta1SKLearnSpec(\n                                            storage_uri=\"\
+          s3://ds-seminar-model/model.pkl\",\n                                   \
+          \         resources=V1ResourceRequirements(\n                          \
+          \                      requests={'cpu': '200m', 'memory': '500Mi'},\n  \
+          \                                              limits={'cpu': '200m', 'memory':\
+          \ '500Mi'}\n                                                ),\n       \
+          \                                     env=aws_env_vars\n               \
+          \                             )\n                                      \
+          \  )\n                                    )\n                          \
+          \      )\n                            )\n    KServe.create(isvc)\n\n"
+        image: python:3.9.16
+    exec-git-dvc-clone:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - git_dvc_clone
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.4.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'subprocess.run'\
+          \ 'dvc[s3]' && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef git_dvc_clone(\n    repo: Output[Artifact],\n    dataset: Output[Dataset]\n\
+          ):\n    import subprocess, os, shutil\n\n    gl_at = os.environ['GITLAB_ACCESS_TOKEN']\n\
+          \    repo_name = \"ds-seminar-mlops-demo\"\n\n    subprocess.call([\"git\"\
+          , \"clone\", \"https://<GITLAB_USER>:\" + gl_at + \"@gitlab.com//<GITLAB_REPO>.git\"])\n    subprocess.call([\"git\", \"pull\"], cwd=\"\
+          /\" + repo_name)\n    shutil.copytree(\"/\" + repo_name, repo.path)\n\n\
+          \    subprocess.call([\"dvc\", \"pull\"], cwd=\"/\" + repo_name)\n\n   \
+          \ os.rename(\"/\" + repo_name + \"/data.csv\", dataset.path)\n\n"
+        image: python:3.9.16
+    exec-git-dvc-push:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - git_dvc_push
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.4.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'subprocess.run'\
+          \ 'dvc[s3]' && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef git_dvc_push(\n    trigger: str,\n    timestamp: str,\n    trained_model:\
+          \ Model,\n    metrics: Artifact,\n    repo: Artifact\n) -> str:\n    import\
+          \ subprocess, os, shutil\n    import datetime\n\n    shutil.copy2(trained_model.path,\
+          \ os.path.join(repo.path, \"model.pkl\"))\n    shutil.copy2(metrics.path,\
+          \ os.path.join(repo.path, \"metrics.png\"))\n\n    subprocess.call([\"dvc\"\
+          , \"add\", \"model.pkl\"], cwd=repo.path)\n    subprocess.call([\"dvc\"\
+          , \"push\", \"model.pkl\"], cwd=repo.path)\n\n    subprocess.call([\"git\"\
+          , \"config\", \"--global\", \"user.email\", '\"' + os.environ['GITHUB_USER_EMAIL']\
+          \ + '\"'] , cwd=repo.path)\n    subprocess.call([\"git\", \"config\", \"\
+          --global\", \"user.name\",  '\"' + os.environ['GITHUB_USER_NAME'] + '\"\
+          '] , cwd=repo.path)\n\n    subprocess.call([\"git\", \"add\", \"model.pkl.dvc\"\
+          ] , cwd=repo.path)\n    subprocess.call([\"git\", \"add\", \"metrics.png\"\
+          ] , cwd=repo.path)\n    subprocess.call([\"git\", \"commit\", \"-m\", \"\
+          [AUTO] Kubeflow Pipeline Execution triggered by [\" + trigger + \"] at [\"\
+          \ + timestamp + \"] \"] , cwd=repo.path)\n\n    timestamp_as_tag = datetime.datetime.strptime(timestamp,\
+          \ \"%Y-%m-%dT%H:%M:%S%z\").strftime('%Y%m%d%H%M%S')\n    subprocess.call([\"\
+          git\", \"tag\", \"-a\", timestamp_as_tag, \"-m\", trigger], cwd=repo.path)\n\
+          \n    gl_at = os.environ['GITLAB_ACCESS_TOKEN']\n    subprocess.call([\"\
+          git\", \"push\", \"https://<GITLAB_USER>:\" + gl_at + \"@gitlab.com/<GITLAB_REPO>-git\"\
+          , \"--follow-tags\", \"--force\"], cwd=repo.path) # TODO Change to create\
+          \ Tag\n    return \"True\"\n\n"
+        image: python:3.9.16
+    exec-metrics:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - metrics
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.4.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'pandas' 'scikit-learn'\
+          \ 'matplotlib' && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef metrics(\n    trained_model: Input[Model],\n    processed_dataset:\
+          \ Input[Dataset],\n    metrics: Output[Artifact]\n):\n    from sklearn.metrics\
+          \ import PredictionErrorDisplay\n    from sklearn.preprocessing import PolynomialFeatures\n\
+          \    import matplotlib.pyplot as plt\n    import pandas as pd\n    import\
+          \ pickle    \n\n    with open(trained_model.path, 'rb') as f:\n        poly\
+          \ = pickle.load(f)\n\n    processed_dataset_df = pd.read_pickle(processed_dataset.path)\n\
+          \    X = processed_dataset_df[[\"wght\", \"year\"]] # Ergebnis Feature Engineering:\
+          \ unabh\xE4ngige Variablen\n    y_true = processed_dataset_df[\"mpg\"] #\
+          \ abh\xE4ngige Variable \"Verbrauch\"  \n    X_poly = PolynomialFeatures(degree=2).fit_transform(X)\n\
+          \n    y_pred = poly.predict(X_poly)\n\n    # Ausgabe Bestimmtheitsma\xDF\
+          \ R^2\n    r_2 = poly.score(X_poly, y_true)\n\n    # Visueller Vergleich\
+          \ der wahren mit den vorhergesagten Werten \n    fig, axs = plt.subplots(ncols=2,\
+          \ figsize=(6, 4))\n    PredictionErrorDisplay.from_predictions(\n      \
+          \  y_true=y_true,\n        y_pred=y_pred,\n        kind=\"actual_vs_predicted\"\
+          ,\n        subsample=100,\n        ax=axs[0],\n        random_state=0,\n\
+          \    )\n    axs[0].yaxis.set_ticklabels([])\n    axs[0].xaxis.set_ticklabels([])\n\
+          \    PredictionErrorDisplay.from_predictions(\n        y_true=y_true,\n\
+          \        y_pred=y_pred,\n        kind=\"residual_vs_predicted\",\n     \
+          \   subsample=100,\n        ax=axs[1],\n        random_state=0,\n    )\n\
+          \    axs[1].xaxis.set_ticklabels([])\n    axs[1].set_ylabel(\"Actual - Predicted\
+          \ \", labelpad=-3)\n    fig.suptitle(\"R^2 score: \" + str(r_2) , y=0.75)\n\
+          \    plt.tight_layout(pad=4)\n    plt.savefig(metrics.path, format='png')\
+          \    \n\n"
+        image: python:3.9.16
+    exec-train:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - train
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.4.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'pandas' 'scikit-learn'\
+          \ && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef train(\n    processed_dataset: Input[Dataset],\n    trained_model:\
+          \ Output[Model]\n):\n    # Ben\xF6tigte Bibliotheken innerhab der Komponente\n\
+          \    from sklearn.preprocessing import PolynomialFeatures\n    from sklearn.linear_model\
+          \ import LinearRegression\n    import pandas as pd\n    import pickle\n\n\
+          \    # Ausgabe der vorherigen Komponente\n    df = pd.read_pickle(processed_dataset.path)\
+          \ \n\n    X = df[[\"wght\", \"year\"]] # unabh\xE4ngige Variablen\n    y_true\
+          \ = df[\"mpg\"] # abh\xE4ngige Variable\n    X_poly = PolynomialFeatures(degree=2).fit_transform(X)\n\
+          \n    poly = LinearRegression()\n    poly.fit(X_poly, y_true)\n\n    # Speichern\
+          \ f\xFCr nachfolgende Komponenten\n    with open(trained_model.path,'wb')\
+          \ as f: \n        pickle.dump(poly,f)\n\n"
+        image: python:3.9.16
+pipelineInfo:
+  name: pipeline
+root:
+  dag:
+    tasks:
+      condition-1:
+        componentRef:
+          name: comp-condition-1
+        dependentTasks:
+        - git-dvc-push
+        inputs:
+          parameters:
+            pipelinechannel--git-dvc-push-Output:
+              taskOutputParameter:
+                outputParameterKey: Output
+                producerTask: git-dvc-push
+        taskInfo:
+          name: condition-1
+        triggerPolicy:
+          condition: inputs.parameter_values['pipelinechannel--git-dvc-push-Output']
+            == 'True'
+      data-preprocessing:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-data-preprocessing
+        dependentTasks:
+        - git-dvc-clone
+        inputs:
+          artifacts:
+            dataset:
+              taskOutputArtifact:
+                outputArtifactKey: dataset
+                producerTask: git-dvc-clone
+        taskInfo:
+          name: data-preprocessing
+      git-dvc-clone:
+        cachingOptions: {}
+        componentRef:
+          name: comp-git-dvc-clone
+        taskInfo:
+          name: git-dvc-clone
+      git-dvc-push:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-git-dvc-push
+        dependentTasks:
+        - git-dvc-clone
+        - metrics
+        - train
+        inputs:
+          artifacts:
+            metrics:
+              taskOutputArtifact:
+                outputArtifactKey: metrics
+                producerTask: metrics
+            repo:
+              taskOutputArtifact:
+                outputArtifactKey: repo
+                producerTask: git-dvc-clone
+            trained_model:
+              taskOutputArtifact:
+                outputArtifactKey: trained_model
+                producerTask: train
+          parameters:
+            timestamp:
+              componentInputParameter: timestamp
+            trigger:
+              componentInputParameter: trigger
+        taskInfo:
+          name: git-dvc-push
+      metrics:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-metrics
+        dependentTasks:
+        - data-preprocessing
+        - train
+        inputs:
+          artifacts:
+            processed_dataset:
+              taskOutputArtifact:
+                outputArtifactKey: processed_dataset
+                producerTask: data-preprocessing
+            trained_model:
+              taskOutputArtifact:
+                outputArtifactKey: trained_model
+                producerTask: train
+        taskInfo:
+          name: metrics
+      train:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-train
+        dependentTasks:
+        - data-preprocessing
+        inputs:
+          artifacts:
+            processed_dataset:
+              taskOutputArtifact:
+                outputArtifactKey: processed_dataset
+                producerTask: data-preprocessing
+        taskInfo:
+          name: train
+  inputDefinitions:
+    parameters:
+      timestamp:
+        defaultValue: ''
+        isOptional: true
+        parameterType: STRING
+      trigger:
+        defaultValue: ''
+        isOptional: true
+        parameterType: STRING
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.4.0
+---
+platforms:
+  kubernetes:
+    deploymentSpec:
+      executors:
+        exec-deploy:
+          secretAsEnv:
+          - keyToEnv:
+            - envVar: AWS_ACCESS_KEY_ID
+              secretKey: AWS_ACCESS_KEY_ID
+            - envVar: AWS_SECRET_ACCESS_KEY
+              secretKey: AWS_SECRET_ACCESS_KEY
+            - envVar: GITLAB_ACCESS_TOKEN
+              secretKey: GITLAB_ACCESS_TOKEN
+            - envVar: GITHUB_USER_EMAIL
+              secretKey: GITHUB_USER_EMAIL
+            - envVar: GITHUB_USER_NAME
+              secretKey: GITHUB_USER_NAME
+            secretName: pipeline-secrets
+        exec-git-dvc-clone:
+          secretAsEnv:
+          - keyToEnv:
+            - envVar: AWS_ACCESS_KEY_ID
+              secretKey: AWS_ACCESS_KEY_ID
+            - envVar: AWS_SECRET_ACCESS_KEY
+              secretKey: AWS_SECRET_ACCESS_KEY
+            - envVar: GITLAB_ACCESS_TOKEN
+              secretKey: GITLAB_ACCESS_TOKEN
+            - envVar: GITHUB_USER_EMAIL
+              secretKey: GITHUB_USER_EMAIL
+            - envVar: GITHUB_USER_NAME
+              secretKey: GITHUB_USER_NAME
+            secretName: pipeline-secrets
+        exec-git-dvc-push:
+          secretAsEnv:
+          - keyToEnv:
+            - envVar: AWS_ACCESS_KEY_ID
+              secretKey: AWS_ACCESS_KEY_ID
+            - envVar: AWS_SECRET_ACCESS_KEY
+              secretKey: AWS_SECRET_ACCESS_KEY
+            - envVar: GITLAB_ACCESS_TOKEN
+              secretKey: GITLAB_ACCESS_TOKEN
+            - envVar: GITHUB_USER_EMAIL
+              secretKey: GITHUB_USER_EMAIL
+            - envVar: GITHUB_USER_NAME
+              secretKey: GITHUB_USER_NAME
+            secretName: pipeline-secrets
